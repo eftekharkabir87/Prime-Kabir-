@@ -1,119 +1,89 @@
-const a = require("axios");
-const b = require("fs");
-const c = require("path");
-const d = require("yt-search");
-
-const nix = "https://raw.githubusercontent.com/aryannix/stuffs/master/raw/apis.json";
-
-async function getStream(url) {
-  const res = await a({ url, responseType: "stream" });
-  return res.data;
-}
-
-async function downloadSong(baseApi, url, api, event, title = null) {
-  try {
-    const apiUrl = `${baseApi}/play?url=${encodeURIComponent(url)}`;
-    const res = await a.get(apiUrl);
-    const data = res.data;
-
-    if (!data.status || !data.downloadUrl) throw new Error("API failed to return download URL.");
-
-    const songTitle = title || data.title;
-    const fileName = `${songTitle}.mp3`.replace(/[\\/:"*?<>|]/g, "");
-    const filePath = c.join(__dirname, fileName);
-
-    const songData = await a.get(data.downloadUrl, { responseType: "arraybuffer" });
-    b.writeFileSync(filePath, songData.data);
-
-    await api.sendMessage(
-      { body: `• ${songTitle}`, attachment: b.createReadStream(filePath) },
-      event.threadID,
-      () => b.unlinkSync(filePath),
-      event.messageID
-    );
-  } catch (err) {
-    console.error(err);
-    api.sendMessage(`❌ Failed to download song: ${err.message}`, event.threadID, event.messageID);
-  }
-}
+const axios = require("axios");
 
 module.exports = {
   config: {
-    name: "song",
-    aliases: ["music", "sing"],
-    version: "0.0.1",
-    author: "ArYAN",
+    name: "sing",
+    version: "1.4",
+    author: "Eren Yeager",
     countDown: 5,
     role: 0,
-    shortDescription: "Sing tomake chai",
-    longDescription: "Search and download music from YouTube",
-    category: "MUSIC",
-    guide: "/play <song name or YouTube URL>"
+    shortDescription: "Play music via custom API",
+    longDescription: "Stream music from custom API; handles JSON response with audio URL or direct audio stream.",
+    category: "media"
   },
 
-  onStart: async function ({ api: e, event: f, args: g, commandName: cmd }) {
-    let baseApi;
-    try {
-      const configRes = await a.get(nix);
-      baseApi = configRes.data && configRes.data.api;
-      if (!baseApi) throw new Error("Configuration Error: Missing API in GitHub JSON.");
-    } catch (error) {
-      return e.sendMessage("❌ Failed to fetch API configuration from GitHub.", f.threadID, f.messageID);
-    }
-    
-    if (!g.length) return e.sendMessage("❌ Provide a song name or YouTube URL.", f.threadID, f.messageID);
+  onStart: async function ({ args, message, api }) {
+    if (!args.length) return message.reply("⚠️ Please type a song name.\nUsage: -sing <song name>");
 
-    const aryan = g;
-    const query = aryan.join(" ");
-    if (query.startsWith("http")) return downloadSong(baseApi, query, e, f);
+    const query = args.join(" ");
+    let loadingMsgID = null;
 
     try {
-      const res = await d(query);
-      const results = res.videos.slice(0, 6);
-      if (!results.length) return e.sendMessage("❌ No results found.", f.threadID, f.messageID);
+      const loading = await message.reply(`🎧 Searching: ${query}\nPlease wait...`);
+      loadingMsgID = loading.messageID || loading.messageId || loading.mid || null;
 
-      let msg = "";
-      results.forEach((v, i) => {
-        msg += `${i + 1}. ${v.title}\n⏱ ${v.timestamp} | 👀 ${v.views}\n\n`;
-      });
+      const apiUrl = `https://www.dur4nto-yeager.rf.gd/api/sing2?query=${encodeURIComponent(query)}`;
+      const res = await axios.get(apiUrl, { timeout: 0, responseType: "stream" });
+      const contentType = (res.headers && res.headers["content-type"]) ? res.headers["content-type"] : "";
 
-      const thumbs = await Promise.all(results.map(v => getStream(v.thumbnail)));
+      if (contentType.includes("application/json") || contentType.includes("text/json")) {
+        const chunks = [];
+        for await (const chunk of res.data) chunks.push(chunk);
+        const raw = Buffer.concat(chunks).toString("utf8");
+        let parsed;
+        try { parsed = JSON.parse(raw); } catch (e) { throw new Error("Invalid JSON from API"); }
+        const audioURL = parsed && (parsed.url || parsed.audio_url);
+        const title = parsed && (parsed.title || query);
+        if (!audioURL) throw new Error("No audio URL in API JSON");
+        let stream;
+        if (global && global.utils && typeof global.utils.getStreamFromURL === "function") {
+          stream = await global.utils.getStreamFromURL(audioURL);
+        } else {
+          const audioRes = await axios.get(audioURL, { timeout: 0, responseType: "stream" });
+          stream = audioRes.data;
+        }
+        if (loadingMsgID && api && typeof api.unsendMessage === "function") {
+          try { await api.unsendMessage(loadingMsgID); } catch (e) {}
+        }
+        await message.reply({ body: `🎵 Now playing: ${title}`, attachment: stream });
+        return;
+      }
 
-      e.sendMessage(
-        { body: msg + "Reply with number (1-6) to download song", attachment: thumbs },
-        f.threadID,
-        (err, info) => {
-          if (err) return console.error(err);
-          global.GoatBot.onReply.set(info.messageID, {
-            results,
-            messageID: info.messageID,
-            author: f.senderID,
-            commandName: cmd,
-            baseApi
-          });
-        },
-        f.messageID
-      );
+      if (contentType.startsWith("audio/") || contentType === "application/octet-stream") {
+        const title = query;
+        const stream = res.data;
+        if (loadingMsgID && api && typeof api.unsendMessage === "function") {
+          try { await api.unsendMessage(loadingMsgID); } catch (e) {}
+        }
+        await message.reply({ body: `🎵 Now playing: ${title}`, attachment: stream });
+        return;
+      }
+
+      const fallbackChunks = [];
+      for await (const chunk of res.data) fallbackChunks.push(chunk);
+      const fallbackRaw = Buffer.concat(fallbackChunks).toString("utf8");
+      let fallbackParsed;
+      try { fallbackParsed = JSON.parse(fallbackRaw); } catch (e) { throw new Error("Unknown response from API"); }
+      const audioURL = fallbackParsed && (fallbackParsed.url || fallbackParsed.audio_url);
+      const title = fallbackParsed && (fallbackParsed.title || query);
+      if (!audioURL) throw new Error("No audio URL found in fallback JSON");
+      let stream;
+      if (global && global.utils && typeof global.utils.getStreamFromURL === "function") {
+        stream = await global.utils.getStreamFromURL(audioURL);
+      } else {
+        const audioRes = await axios.get(audioURL, { timeout: 0, responseType: "stream" });
+        stream = audioRes.data;
+      }
+      if (loadingMsgID && api && typeof api.unsendMessage === "function") {
+        try { await api.unsendMessage(loadingMsgID); } catch (e) {}
+      }
+      await message.reply({ body: `🎵 Now playing: ${title}`, attachment: stream });
+
     } catch (err) {
-      console.error(err);
-      e.sendMessage("❌ Failed to search YouTube.", f.threadID, f.messageID);
+      if (loadingMsgID && api && typeof api.unsendMessage === "function") {
+        try { await api.unsendMessage(loadingMsgID); } catch (e) {}
+      }
+      await message.reply("❌ Could not fetch audio. API connection or response issue.");
     }
-  },
-
-  onReply: async function ({ api: e, event: f, Reply: g }) {
-    const results = g.results;
-    const baseApi = g.baseApi;
-    if (!baseApi) return e.sendMessage("❌ Session expired. Please restart the command.", f.threadID, f.messageID);
-
-    const choice = parseInt(f.body);
-
-    if (isNaN(choice) || choice < 1 || choice > results.length) {
-      return e.sendMessage("❌ Invalid selection.", f.threadID, f.messageID);
-    }
-
-    const selected = results[choice - 1];
-    await e.unsendMessage(g.messageID);
-
-    downloadSong(baseApi, selected.url, e, f, selected.title);
   }
 };
