@@ -7,7 +7,7 @@ const baseApiUrl = async () => {
   return base.data.mahmud;
 };
 
-module.exports = { 
+module.exports = {
   config: { 
     name: "album", 
     version: "1.7", 
