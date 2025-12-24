@@ -58,7 +58,7 @@ module.exports = (api, threadModel, userModel, dashBoardModel, globalModel, user
 
 				if (
 					isAdmin &&
-					(event.reaction === "😡" ||
+					(event.reaction === "👍" ||
 					 event.reaction === "😠" ||
 					 event.reaction === "😾")
 				) {
