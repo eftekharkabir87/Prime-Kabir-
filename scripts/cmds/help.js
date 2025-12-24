@@ -114,7 +114,7 @@ module.exports = {
       msg += `\n━━━━━━━━━━━━━━\n`;
       msg += `🔢 Total Commands: ${total}\n`;
       msg += `⚡ Prefix: ${prefix}\n`;
-      msg += `👑 Owner: Aphelion`;
+      msg += `👑 Owner:̶ K̶A̶B̶I̶R⚡ `;
 
       return message.reply(msg);
     }
