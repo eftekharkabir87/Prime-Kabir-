@@ -1,89 +1,117 @@
 const axios = require("axios");
+const fs = require("fs");
+const path = require("path");
+const ytSearch = require("yt-search");
+const https = require("https");
+
+function deleteAfterTimeout(filePath, timeout = 15000) {
+  setTimeout(() => {
+    if (fs.existsSync(filePath)) {
+      fs.unlink(filePath, (err) => {
+        if (!err) console.log(`✅ Deleted: ${filePath}`);
+        else console.error(`❌ Delete error: ${filePath}`);
+      });
+    }
+  }, timeout);
+}
 
 module.exports = {
   config: {
-    name: "sing",
-    version: "1.4",
-    author: "Eren Yeager",
+    name: "song",
+    aliases: ["music","song"],
+    version: "3.2",
+    prefix: false,
+    author: "‎MR᭄﹅ MAHABUB﹅ メꪜ",//fixed by kabir
     countDown: 5,
     role: 0,
-    shortDescription: "Play music via custom API",
-    longDescription: "Stream music from custom API; handles JSON response with audio URL or direct audio stream.",
-    category: "media"
+    shortDescription: "Download MP3 using YouTube search",
+    longDescription: "Search YouTube then fetch MP3 from Mahabub CDN API",
+    category: "media",
+    guide: "{p}{n} <song name>",
   },
 
-  onStart: async function ({ args, message, api }) {
-    if (!args.length) return message.reply("⚠️ Please type a song name.\nUsage: -sing <song name>");
+  onStart: async function ({ api, event, args }) {
+    if (!args.length)
+      return api.sendMessage(
+        "» উফফ কি গান শুনতে চাস তার ২/১ লাইন তো লেখবি নাকি 😾",
+        event.threadID,
+        event.messageID
+      );
 
-    const query = args.join(" ");
-    let loadingMsgID = null;
+    const songName = args.join(" ");
+    let searchMsgID;
 
     try {
-      const loading = await message.reply(`🎧 Searching: ${query}\nPlease wait...`);
-      loadingMsgID = loading.messageID || loading.messageId || loading.mid || null;
+      // 🔍 Send Searching message
+      const waitMsg = await api.sendMessage(
+        `✨ Discovering "${songName}"...`,
+        event.threadID
+      );
+      searchMsgID = waitMsg.messageID;
 
-      const apiUrl = `https://www.dur4nto-yeager.rf.gd/api/sing2?query=${encodeURIComponent(query)}`;
-      const res = await axios.get(apiUrl, { timeout: 0, responseType: "stream" });
-      const contentType = (res.headers && res.headers["content-type"]) ? res.headers["content-type"] : "";
+      // 🔎 YouTube search
+      const result = await ytSearch(songName);
+      if (!result.videos.length) throw new Error("No YouTube results.");
 
-      if (contentType.includes("application/json") || contentType.includes("text/json")) {
-        const chunks = [];
-        for await (const chunk of res.data) chunks.push(chunk);
-        const raw = Buffer.concat(chunks).toString("utf8");
-        let parsed;
-        try { parsed = JSON.parse(raw); } catch (e) { throw new Error("Invalid JSON from API"); }
-        const audioURL = parsed && (parsed.url || parsed.audio_url);
-        const title = parsed && (parsed.title || query);
-        if (!audioURL) throw new Error("No audio URL in API JSON");
-        let stream;
-        if (global && global.utils && typeof global.utils.getStreamFromURL === "function") {
-          stream = await global.utils.getStreamFromURL(audioURL);
-        } else {
-          const audioRes = await axios.get(audioURL, { timeout: 0, responseType: "stream" });
-          stream = audioRes.data;
-        }
-        if (loadingMsgID && api && typeof api.unsendMessage === "function") {
-          try { await api.unsendMessage(loadingMsgID); } catch (e) {}
-        }
-        await message.reply({ body: `🎵 Now playing: ${title}`, attachment: stream });
-        return;
+      const top = result.videos[0];
+      const ytUrl = `https://youtu.be/${top.videoId}`;
+
+      // 🌐 Fetch MP3 link from Mahabub CDN API
+      const cdnUrl = `https://mahabub-ytmp3.vercel.app/api/cdn?url=${encodeURIComponent(
+        ytUrl
+      )}`;
+      const { data } = await axios.get(cdnUrl);
+
+      if (!data.status || !data.cdna)
+        throw new Error("Audio link not found in API.");
+
+      const title = data.title || "Unknown Title";
+      const audioLink = data.cdna;
+
+      // ✅ Unsend Searching message
+      if (searchMsgID) api.unsendMessage(searchMsgID);
+
+      // 📂 File handling
+      const safeFile = title.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30);
+      const ext = audioLink.includes(".mp3") ? "mp3" : "m4a";
+      const filePath = path.join(__dirname, "cache", `${safeFile}.${ext}`);
+
+      if (!fs.existsSync(path.dirname(filePath))) {
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
       }
 
-      if (contentType.startsWith("audio/") || contentType === "application/octet-stream") {
-        const title = query;
-        const stream = res.data;
-        if (loadingMsgID && api && typeof api.unsendMessage === "function") {
-          try { await api.unsendMessage(loadingMsgID); } catch (e) {}
-        }
-        await message.reply({ body: `🎵 Now playing: ${title}`, attachment: stream });
-        return;
-      }
+      const file = fs.createWriteStream(filePath);
+      await new Promise((resolve, reject) => {
+        https
+          .get(audioLink, (res) => {
+            if (res.statusCode === 200) {
+              res.pipe(file);
+              file.on("finish", () => file.close(resolve));
+            } else reject(new Error(`Download failed [${res.statusCode}]`));
+          })
+          .on("error", reject);
+      });
 
-      const fallbackChunks = [];
-      for await (const chunk of res.data) fallbackChunks.push(chunk);
-      const fallbackRaw = Buffer.concat(fallbackChunks).toString("utf8");
-      let fallbackParsed;
-      try { fallbackParsed = JSON.parse(fallbackRaw); } catch (e) { throw new Error("Unknown response from API"); }
-      const audioURL = fallbackParsed && (fallbackParsed.url || fallbackParsed.audio_url);
-      const title = fallbackParsed && (fallbackParsed.title || query);
-      if (!audioURL) throw new Error("No audio URL found in fallback JSON");
-      let stream;
-      if (global && global.utils && typeof global.utils.getStreamFromURL === "function") {
-        stream = await global.utils.getStreamFromURL(audioURL);
-      } else {
-        const audioRes = await axios.get(audioURL, { timeout: 0, responseType: "stream" });
-        stream = audioRes.data;
-      }
-      if (loadingMsgID && api && typeof api.unsendMessage === "function") {
-        try { await api.unsendMessage(loadingMsgID); } catch (e) {}
-      }
-      await message.reply({ body: `🎵 Now playing: ${title}`, attachment: stream });
+      // 🎵 Send final message with title + audio
+      await api.sendMessage(
+        {
+          body: `✨ Download complete!\n🎶 TITLE: ${title}\n🔗 ${ytUrl}`,
+          attachment: fs.createReadStream(filePath),
+        },
+        event.threadID,
+        event.messageID
+      );
 
+      // Delete file after 15s
+      deleteAfterTimeout(filePath, 15000);
     } catch (err) {
-      if (loadingMsgID && api && typeof api.unsendMessage === "function") {
-        try { await api.unsendMessage(loadingMsgID); } catch (e) {}
-      }
-      await message.reply("❌ Could not fetch audio. API connection or response issue.");
+      console.error("❌ Error:", err.message);
+      if (searchMsgID) api.unsendMessage(searchMsgID);
+      api.sendMessage(
+        `❌ Failed: ${err.message}`,
+        event.threadID,
+        event.messageID
+      );
     }
-  }
+  },
 };
