@@ -1,66 +1,46 @@
-
-
-const fs = require("fs");
-const path = "./commands/slotData.json";
-
 module.exports = {
   config: {
     name: "top",
-    version: "1.0",
-    author: "Kabir✨",
-    countDown: 10,
+    version: "1.4",
+    author: "Kabir⚡ x gpt🤡",
     role: 0,
     shortDescription: {
-      en: "🏆 Slot Top Leaderboard"
+      en: "Top 15 Rich Users"
     },
     longDescription: {
-      en: "View top richest players from slot machine"
+      en: ""
     },
-    category: "game"
+    category: "group",
+    guide: {
+      en: "{pn}"
+    }
   },
+  onStart: async function ({ api, args, message, event, usersData }) {
+    const allUsers = await usersData.getAll();
+    
+    // Sort users by money and take top 15
+    const topUsers = allUsers.sort((a, b) => b.money - a.money).slice(0, 15);
 
-  onStart: async function ({ message }) {
-    if (!fs.existsSync(path)) {
-      return message.reply("❌ Slot data not found!");
+    // Function to format numbers correctly
+    function formatNumber(num) {
+      if (num >= 1e15) return (num / 1e15).toFixed(2) + "Q"; // Quadrillion
+      if (num >= 1e12) return (num / 1e12).toFixed(2) + "T"; // Trillion
+      if (num >= 1e9) return (num / 1e9).toFixed(2) + "B"; // Billion
+      if (num >= 1e6) return (num / 1e6).toFixed(2) + "M"; // Million
+      if (num >= 1e3) return (num / 1e3).toFixed(2) + "K"; // Thousand
+      return num.toString(); // যদি 1K-এর নিচে হয়, তাহলে নরমাল দেখাবে
     }
 
-    let data;
-    try {
-      data = JSON.parse(fs.readFileSync(path, "utf-8"));
-    } catch (e) {
-      return message.reply("❌ Slot data corrupted!");
-    }
-
-    const users = Object.entries(data)
-      .map(([uid, info]) => ({
-        uid,
-        name: info.name || "Unknown",
-        coin: info.coin || 0,
-        win: info.win || 0,
-        lose: info.lose || 0
-      }))
-      .sort((a, b) => b.coin - a.coin)
-      .slice(0, 10);
-
-    if (users.length === 0) {
-      return message.reply("😴 No players found yet!");
-    }
-
-    let msg = `🏆 𝗦𝗟𝗢𝗧 𝗧𝗢𝗣 𝗟𝗘𝗔𝗗𝗘𝗥𝗕𝗢𝗔𝗥𝗗 🏆\n`;
-    msg += `━━━━━━━━━━━━━━━━━━\n\n`;
-
-    const medals = ["🥇", "🥈", "🥉"];
-
-    users.forEach((user, index) => {
-      const rankIcon = medals[index] || `#${index + 1}`;
-      msg += `${rankIcon} ${user.name}\n`;
-      msg += `💰 Coins: ${user.coin.toLocaleString()}\n`;
-      msg += `🎯 Win: ${user.win} | ❌ Lose: ${user.lose}\n`;
-      msg += `━━━━━━━━━━━━━━━━━━\n`;
+    // Create leaderboard list
+    const topUsersList = topUsers.map((user, index) => {
+      const moneyFormatted = formatNumber(user.money || 0); // যদি টাকা না থাকে তাহলে "0" দেখাবে
+      const medals = ["🥇", "🥈", "🥉"];
+      return `${medals[index] || `${index + 1}.`} ${user.name} - ${moneyFormatted}`;
     });
 
-    msg += `✨ Keep spinning & climb the leaderboard!`;
+    // Shortened header and compact design
+    const messageText = `👑 𝗧𝗢𝗣 𝗥𝗜𝗖𝗛𝗘𝗦𝗧 𝗨𝗦𝗘𝗥𝗦 👑\n━━━━━━━━━━━\n${topUsersList.join("\n")}`;
 
-    return message.reply(msg);
+    message.reply(messageText);
   }
 };
