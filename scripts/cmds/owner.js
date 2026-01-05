@@ -23,7 +23,7 @@ module.exports = {
         tag: 'Acs kabir⚡'
       };
 
-      const videoURL = 'https://files.catbox.moe/oevipj.mp4';
+      const videoURL = 'https://files.catbox.moe/3t2ztm.mp4';
       const tempPath = path.join(__dirname, 'tmp');
       if (!fs.existsSync(tempPath)) fs.mkdirSync(tempPath);
 
