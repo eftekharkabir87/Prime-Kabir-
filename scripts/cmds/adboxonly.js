@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = { 
 	config: {
 		name: "onlyadminbox",
 		aliases: ["onlyadbox", "adboxonly", "adminboxonly"],
