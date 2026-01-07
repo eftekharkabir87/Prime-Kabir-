@@ -1,6 +1,6 @@
 /**
  * VIP Management Command
- * Author: GPT-5 (Styled for Goat Bot)
+ * Author: KABIR⚡ (Styled for Goat Bot)
  */
 
 const fs = require("fs");
