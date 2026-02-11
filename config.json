@@ -13,7 +13,7 @@
   "checkApproval": true,
   "language": "en",
   "notesLanguage": "change to your language with ISO 639-1 code, available languages: vi (Vietnamese), en (English)",
-  "nickNameBot": "ⱤɄĐØ☯",
+  "nickNameBot": "EREÑ 💫",
   "prefix": "!",
   "adminOnly": {
     "enable": false,
@@ -62,7 +62,7 @@
   "dashBoard": {
     "enable": true,
     "expireVerifyCode": 300000,
-    "port": 9999
+    "port": 8888
   },
   "serverUptime": {
     "enable": false,
